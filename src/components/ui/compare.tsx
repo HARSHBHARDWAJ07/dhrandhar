@@ -19,35 +19,53 @@ interface CompareProps {
   autoplayDuration?: number;
 }
 
-const clamp = (value: number) => Math.max(0, Math.min(100, value));
+const clamp = (v: number) => Math.max(0, Math.min(100, v));
+
+// 🔥 Smooth factor (lower = smoother)
+const SMOOTHING = 0.12;
 
 export const Compare = ({
   firstImage = "",
   secondImage = "",
   className,
-  firstImageClassName,
-  secondImageClassname,
   initialSliderPercentage = 50,
   slideMode = "hover",
   showHandlebar = true,
   autoplay = false,
   autoplayDuration = 5000,
 }: CompareProps) => {
+  const [target, setTarget] = useState(initialSliderPercentage);
   const [slider, setSlider] = useState(initialSliderPercentage);
+
   const [isDragging, setIsDragging] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
-  const [isTouchInteracting, setIsTouchInteracting] = useState(false);
 
   const ref = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
-  const autoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activePointerIdRef = useRef<number | null>(null);
+  const autoplayRef = useRef<any>(null);
 
+  // ─── SMOOTH INTERPOLATION (LERP) ─────────────────────
+  useEffect(() => {
+    const animate = () => {
+      setSlider((prev) => {
+        const diff = target - prev;
+        if (Math.abs(diff) < 0.1) return target;
+        return prev + diff * SMOOTHING;
+      });
+
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [target]);
+
+  // ─── AUTOPLAY ─────────────────────
   const stopAutoplay = useCallback(() => {
-    if (autoplayRef.current) {
-      clearTimeout(autoplayRef.current);
-      autoplayRef.current = null;
-    }
+    if (autoplayRef.current) clearTimeout(autoplayRef.current);
   }, []);
 
   const startAutoplay = useCallback(() => {
@@ -58,11 +76,13 @@ export const Compare = ({
     const start = Date.now();
 
     const loop = () => {
-      const elapsed = (Date.now() - start) % (autoplayDuration * 2);
-      const progress = elapsed / autoplayDuration;
-      const value = progress <= 1 ? progress * 100 : (2 - progress) * 100;
+      const t = (Date.now() - start) % (autoplayDuration * 2);
+      const progress = t / autoplayDuration;
 
-      setSlider(value);
+      const value =
+        progress <= 1 ? progress * 100 : (2 - progress) * 100;
+
+      setTarget(value);
       autoplayRef.current = setTimeout(loop, 16);
     };
 
@@ -71,196 +91,95 @@ export const Compare = ({
 
   useEffect(() => {
     startAutoplay();
-
-    return () => {
-      stopAutoplay();
-
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
-    };
+    return stopAutoplay;
   }, [startAutoplay, stopAutoplay]);
 
+  // ─── CORE POSITION ─────────────────────
   const update = useCallback((clientX: number) => {
     if (!ref.current) return;
 
     const rect = ref.current.getBoundingClientRect();
-    if (rect.width === 0) return;
-
     const percent = clamp(((clientX - rect.left) / rect.width) * 100);
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-    }
-
-    rafRef.current = requestAnimationFrame(() => {
-      setSlider(percent);
-      rafRef.current = null;
-    });
+    setTarget(percent); // 👈 smooth target instead of direct
   }, []);
 
-  const releasePointer = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (
-        activePointerIdRef.current !== null &&
-        event.currentTarget.hasPointerCapture(activePointerIdRef.current)
-      ) {
-        event.currentTarget.releasePointerCapture(activePointerIdRef.current);
-      }
+  // ─── GLOBAL TRACKING ─────────────────
+  useEffect(() => {
+    if (
+      (slideMode === "hover" && !isHovering) &&
+      (slideMode === "drag" && !isDragging)
+    ) return;
 
-      activePointerIdRef.current = null;
-    },
-    []
-  );
-
-  const endTouchInteraction = useCallback(
-    (resetToInitial: boolean) => {
-      setIsTouchInteracting(false);
-
-      if (slideMode === "drag") {
-        setIsDragging(false);
-      }
-
-      if (slideMode === "hover" && resetToInitial) {
-        setSlider(initialSliderPercentage);
-      }
-
+    const move = (e: MouseEvent) => update(e.clientX);
+    const up = () => {
+      setIsDragging(false);
+      setIsHovering(false);
       startAutoplay();
-    },
-    [initialSliderPercentage, slideMode, startAutoplay]
-  );
+    };
 
-  const onPointerEnter = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.pointerType !== "mouse" || slideMode !== "hover") return;
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
 
-      setIsHovering(true);
-      stopAutoplay();
-      update(event.clientX);
-    },
-    [slideMode, stopAutoplay, update]
-  );
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [isDragging, isHovering, slideMode, update, startAutoplay]);
 
-  const onPointerLeave = useCallback(() => {
-    if (slideMode !== "hover" || isTouchInteracting) return;
+  // ─── EVENTS ─────────────────────
+  const onEnter = (e: React.MouseEvent) => {
+    if (slideMode !== "hover") return;
+    setIsHovering(true);
+    stopAutoplay();
+    update(e.clientX);
+  };
 
+  const onLeave = () => {
+    if (slideMode !== "hover") return;
     setIsHovering(false);
-    setSlider(initialSliderPercentage);
+    setTarget(initialSliderPercentage);
     startAutoplay();
-  }, [initialSliderPercentage, isTouchInteracting, slideMode, startAutoplay]);
+  };
 
-  const onPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const isTouchLike =
-        event.pointerType === "touch" || event.pointerType === "pen";
+  const onDown = (e: React.MouseEvent) => {
+    if (slideMode !== "drag") return;
+    setIsDragging(true);
+    stopAutoplay();
+    update(e.clientX);
+  };
 
-      if (slideMode !== "drag" && !isTouchLike) return;
+  const onUp = () => {
+    if (slideMode !== "drag") return;
+    setIsDragging(false);
+    startAutoplay();
+  };
 
-      activePointerIdRef.current = event.pointerId;
-      event.currentTarget.setPointerCapture(event.pointerId);
+  const onMove = (e: React.MouseEvent) => {
+    if (slideMode === "hover") update(e.clientX);
+    if (slideMode === "drag" && isDragging) update(e.clientX);
+  };
 
-      stopAutoplay();
-      update(event.clientX);
+  const active = autoplay || isHovering || isDragging;
 
-      if (slideMode === "drag") {
-        setIsDragging(true);
-      }
-
-      if (isTouchLike) {
-        setIsTouchInteracting(true);
-      }
-    },
-    [slideMode, stopAutoplay, update]
-  );
-
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const isTouchLike =
-        event.pointerType === "touch" || event.pointerType === "pen";
-
-      if (event.pointerType === "mouse" && slideMode === "hover") {
-        update(event.clientX);
-        return;
-      }
-
-      if (isTouchLike && activePointerIdRef.current === event.pointerId) {
-        update(event.clientX);
-        return;
-      }
-
-      if (slideMode === "drag" && isDragging) {
-        update(event.clientX);
-      }
-    },
-    [isDragging, slideMode, update]
-  );
-
-  const onPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const isTouchLike =
-        event.pointerType === "touch" || event.pointerType === "pen";
-
-      if (isTouchLike && activePointerIdRef.current === event.pointerId) {
-        releasePointer(event);
-        endTouchInteraction(true);
-        return;
-      }
-
-      if (slideMode === "drag") {
-        releasePointer(event);
-        setIsDragging(false);
-        startAutoplay();
-      }
-    },
-    [endTouchInteraction, releasePointer, slideMode, startAutoplay]
-  );
-
-  const onPointerCancel = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const isTouchLike =
-        event.pointerType === "touch" || event.pointerType === "pen";
-
-      if (isTouchLike && activePointerIdRef.current === event.pointerId) {
-        releasePointer(event);
-        endTouchInteraction(true);
-        return;
-      }
-
-      if (slideMode === "drag") {
-        releasePointer(event);
-        setIsDragging(false);
-        startAutoplay();
-      }
-    },
-    [endTouchInteraction, releasePointer, slideMode, startAutoplay]
-  );
-
-  const active = autoplay || isHovering || isDragging || isTouchInteracting;
-
+  // ─── UI ─────────────────────
   return (
     <div
       ref={ref}
-      className={cn(
-        "relative h-[400px] w-[400px] select-none overflow-hidden",
-        className
-      )}
-      style={{
-        cursor:
-          slideMode === "drag" ? (isDragging ? "grabbing" : "grab") : "col-resize",
-        touchAction: "pan-y",
-      }}
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
+      className={cn("relative h-[400px] w-[400px] overflow-hidden", className)}
+      style={{ cursor: "col-resize" }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onMouseDown={onDown}
+      onMouseUp={onUp}
+      onMouseMove={onMove}
     >
+      {/* Divider */}
       <motion.div
         className="absolute inset-y-0 z-30 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-indigo-500 to-transparent"
         style={{ left: `${slider}%` }}
-        transition={{ duration: 0 }}
       >
+        {/* Glow */}
         <div className="absolute left-0 top-1/2 h-full w-36 -translate-y-1/2 bg-gradient-to-r from-indigo-400 to-transparent opacity-50" />
         <div className="absolute right-0 top-1/2 h-full w-36 -translate-y-1/2 bg-gradient-to-l from-indigo-400 to-transparent opacity-50" />
 
@@ -278,37 +197,32 @@ export const Compare = ({
         )}
 
         {showHandlebar && (
-          <div className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white shadow-[0px_-1px_0px_0px_#FFFFFF40]">
+          <div className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white">
             <IconDotsVertical className="h-4 w-4 text-black" />
           </div>
         )}
       </motion.div>
 
+      {/* First Image */}
       <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
         <motion.div
-          className={cn("absolute inset-0", firstImageClassName)}
+          className="absolute inset-0"
           style={{
             clipPath: `inset(0 ${100 - slider}% 0 0)`,
-            WebkitClipPath: `inset(0 ${100 - slider}% 0 0)`,
           }}
-          transition={{ duration: 0 }}
         >
           <img
             src={firstImage}
-            alt="reel reference"
-            className={cn("h-full w-full object-cover", firstImageClassName)}
+            className="h-full w-full object-cover"
             draggable={false}
           />
         </motion.div>
       </div>
 
+      {/* Second Image */}
       <img
         src={secondImage}
-        alt="real reference"
-        className={cn(
-          "absolute inset-0 z-[19] h-full w-full object-cover",
-          secondImageClassname
-        )}
+        className="absolute inset-0 z-[19] h-full w-full object-cover"
         draggable={false}
       />
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Compare } from '@/src/components/ui/compare';
 import ScrollReveal from '@/src/components/ui/scroll-reveal';
 
@@ -27,6 +27,23 @@ export const CharacterDossier: React.FC<CharacterDossierProps> = ({
   realImg,
   isDark = false
 }) => {
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    const mediaQuery = window.matchMedia('(hover: none), (pointer: coarse)');
+
+    const applyMode = () => {
+      setIsCoarsePointer(mediaQuery.matches);
+    };
+
+    applyMode();
+
+    mediaQuery.addEventListener('change', applyMode);
+    return () => mediaQuery.removeEventListener('change', applyMode);
+  }, []);
+
   return (
     <section
       id={id}
@@ -93,7 +110,7 @@ export const CharacterDossier: React.FC<CharacterDossierProps> = ({
             className="h-[420px] w-full rounded-[2rem] border border-white/10 shadow-2xl sm:h-[520px] lg:h-[680px]"
             firstImageClassName="object-cover"
             secondImageClassname="object-cover"
-            slideMode="hover"
+            slideMode={isCoarsePointer ? 'drag' : 'hover'}
             autoplay={false}
           />
           <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-black/35 px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-white/45 backdrop-blur-md md:bottom-6 md:left-6 md:right-6">
