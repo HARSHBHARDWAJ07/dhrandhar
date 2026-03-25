@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-syncopate: "Syncopate", sans-serif;
+  --font-clash: "Clash Display", sans-serif;
+  --font-neue: "Neue Montreal", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-crimson: #E11D48;
+  --color-cyan-intel: #38BDF8;
+}
+
+/* Fallbacks for local fonts if not available */
+@font-face {
+  font-family: 'Clash Display';
+  src: local('Arial Black');
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: 'Neue Montreal';
+  src: local('Helvetica Neue');
+  font-weight: 400;
+}
+
+:root {
+  background-color: #050505;
+  color: #F5F5F5;
+  cursor: crosshair;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E11D48;
+  border-radius: 10px;
+}
+
+.lenis.lenis-smooth {
+  height: auto;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
